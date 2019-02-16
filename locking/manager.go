@@ -1,8 +1,8 @@
 package locking
 
 import (
-	"time"
 	"sync"
+	"time"
 )
 
 // Lock manager.
@@ -51,10 +51,10 @@ type Manager interface {
 // In its present form, the lock manager's complexity scales linearly with the number of outstanding tickets per lock
 // path.
 type managerImpl struct {
-	sync sync.Mutex
-	maintainChan chan string
-	locks map[string]*lockImpl
-	nextTicketId uint64
+	sync                sync.Mutex
+	maintainChan        chan string
+	locks               map[string]*lockImpl
+	nextTicketId        uint64
 	maintenanceInterval time.Duration
 }
 
@@ -67,9 +67,9 @@ func NewManager(config Config) Manager {
 	}
 
 	return &managerImpl{
-		locks: make(map[string]*lockImpl),
-		nextTicketId: 1,
-		maintainChan: make(chan string, 1024),
+		locks:               make(map[string]*lockImpl),
+		nextTicketId:        1,
+		maintainChan:        make(chan string, 1024),
 		maintenanceInterval: maintenanceInterval,
 	}
 }
@@ -170,7 +170,7 @@ func (m *managerImpl) maintainPath(path string) {
 func (m *managerImpl) Start() {
 	go func() {
 		for {
-			path := <- m.maintainChan
+			path := <-m.maintainChan
 
 			m.sync.Lock()
 			m.maintainPath(path)
@@ -202,8 +202,8 @@ func (m *managerImpl) Acquire(path string, lockTimeout time.Duration, leaseTimeo
 	m.nextTicketId++
 
 	ticket := &ticketImpl{
-		id: ticketId,
-		acquiredChan: make(chan bool, 1),
+		id:                ticketId,
+		acquiredChan:      make(chan bool, 1),
 		firstLeaseTimeout: leaseTimeout,
 	}
 

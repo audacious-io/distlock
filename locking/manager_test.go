@@ -12,7 +12,7 @@ func TestManagerAcquireInvalidPath(t *testing.T) {
 	go manager.Start()
 	defer manager.Stop()
 
-	ticket, err := manager.Acquire("/", 10 * timeScale, 10 * timeScale)
+	ticket, err := manager.Acquire("/", 10*timeScale, 10*timeScale)
 
 	if ticket != nil {
 		t.Errorf("Expected ticket to be nil")
@@ -27,7 +27,7 @@ func TestManagerAcquireExpires(t *testing.T) {
 	go manager.Start()
 	defer manager.Stop()
 
-	ticketA, err := manager.Acquire("a", 10 * timeScale, 10 * timeScale)
+	ticketA, err := manager.Acquire("a", 10*timeScale, 10*timeScale)
 
 	if err != nil {
 		t.Fatalf("Unexpected error acquiring lock: %v", err)
@@ -61,7 +61,7 @@ func TestManagerAcquireSecondTimesOutWhileAcquiring(t *testing.T) {
 	go manager.Start()
 	defer manager.Stop()
 
-	ticketA, err := manager.Acquire("a", 10 * timeScale, 20 * timeScale)
+	ticketA, err := manager.Acquire("a", 10*timeScale, 20*timeScale)
 
 	if err != nil {
 		t.Fatalf("Unexpected error acquiring lock: %v", err)
@@ -81,7 +81,7 @@ func TestManagerAcquireSecondTimesOutWhileAcquiring(t *testing.T) {
 	}
 
 	// Attempt to acquire the lock while another caller is holding the lock.
-	ticketB, err := manager.Acquire("a", 10 * timeScale, 20 * timeScale)
+	ticketB, err := manager.Acquire("a", 10*timeScale, 20*timeScale)
 
 	if err != nil {
 		t.Fatalf("Unexpected error acquiring lock: %v", err)
@@ -126,7 +126,7 @@ func TestManagerAcquireSecondAcquiresAfterFirstTimeout(t *testing.T) {
 	go manager.Start()
 	defer manager.Stop()
 
-	ticketA, err := manager.Acquire("a", 10 * timeScale, 10 * timeScale)
+	ticketA, err := manager.Acquire("a", 10*timeScale, 10*timeScale)
 
 	if err != nil {
 		t.Fatalf("Unexpected error acquiring lock: %v", err)
@@ -146,7 +146,7 @@ func TestManagerAcquireSecondAcquiresAfterFirstTimeout(t *testing.T) {
 	}
 
 	// Attempt to acquire the lock while another caller is holding the lock.
-	ticketB, err := manager.Acquire("a", 20 * timeScale, 10 * timeScale)
+	ticketB, err := manager.Acquire("a", 20*timeScale, 10*timeScale)
 
 	if err != nil {
 		t.Fatalf("Unexpected error acquiring lock: %v", err)
@@ -201,10 +201,10 @@ func TestManagerAcquireStaggered(t *testing.T) {
 	go manager.Start()
 	defer manager.Stop()
 
-	ticketA, _ := manager.Acquire("a", 40 * timeScale, 10 * timeScale)
-	ticketB, _ := manager.Acquire("a", 40 * timeScale, 10 * timeScale)
-	ticketC, _ := manager.Acquire("a", 40 * timeScale, 10 * timeScale)
-	ticketD, _ := manager.Acquire("a", 40 * timeScale, 10 * timeScale)
+	ticketA, _ := manager.Acquire("a", 40*timeScale, 10*timeScale)
+	ticketB, _ := manager.Acquire("a", 40*timeScale, 10*timeScale)
+	ticketC, _ := manager.Acquire("a", 40*timeScale, 10*timeScale)
+	ticketD, _ := manager.Acquire("a", 40*timeScale, 10*timeScale)
 
 	// Assert each step of the way.
 	AssertPathLocked(t, manager, "a", ticketA.Id())
@@ -227,7 +227,7 @@ func TestManagerAcquireSecondCancelsAcquiring(t *testing.T) {
 	go manager.Start()
 	defer manager.Stop()
 
-	ticketA, err := manager.Acquire("a", 10 * timeScale, 20 * timeScale)
+	ticketA, err := manager.Acquire("a", 10*timeScale, 20*timeScale)
 
 	if err != nil {
 		t.Fatalf("Unexpected error acquiring lock: %v", err)
@@ -247,7 +247,7 @@ func TestManagerAcquireSecondCancelsAcquiring(t *testing.T) {
 	}
 
 	// Attempt to acquire the lock while another caller is holding the lock.
-	ticketB, err := manager.Acquire("a", 50 * timeScale, 20 * timeScale)
+	ticketB, err := manager.Acquire("a", 50*timeScale, 20*timeScale)
 
 	if err != nil {
 		t.Fatalf("Unexpected error acquiring lock: %v", err)
@@ -301,7 +301,7 @@ func TestManagerAcquireCanceledImmediately(t *testing.T) {
 	go manager.Start()
 	defer manager.Stop()
 
-	ticketA, err := manager.Acquire("a", 10 * timeScale, 20 * timeScale)
+	ticketA, err := manager.Acquire("a", 10*timeScale, 20*timeScale)
 
 	if err != nil {
 		t.Fatalf("Unexpected error acquiring lock: %v", err)
@@ -330,7 +330,7 @@ func TestManagerAcquireCanceledImmediately(t *testing.T) {
 	AssertPathLocked(t, manager, "a", 0)
 
 	// Attempt to lock the path again.
-	ticketB, err := manager.Acquire("a", 10 * timeScale, 20 * timeScale)
+	ticketB, err := manager.Acquire("a", 10*timeScale, 20*timeScale)
 
 	if err != nil {
 		t.Fatalf("Unexpected error acquiring lock: %v", err)

@@ -22,9 +22,9 @@ func TestValidateLockPath(t *testing.T) {
 
 	// Test valid paths.
 	for path, expectedPath := range map[string]string{
-		"a": "a",
-		"//a": "a",
-		"a-b": "a-b",
+		"a":         "a",
+		"//a":       "a",
+		"a-b":       "a-b",
 		"a-b-c/095": "a-b-c/095",
 	} {
 		actualPath, err := ValidateLockPath(path)

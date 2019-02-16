@@ -1,6 +1,12 @@
 all:
 
+fmt:
+	go fmt -w .
+
 test:
 	go test ./...
 
-.PHONY: all test
+vet:
+	go vet ./...
+
+.PHONY: all fmt test vet

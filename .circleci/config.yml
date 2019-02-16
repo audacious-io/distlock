@@ -13,6 +13,10 @@ jobs:
           name: Test
           command: make test
 
+      - run:
+          name: Vet
+          command: make vet
+
 workflows:
   version: 2
 
