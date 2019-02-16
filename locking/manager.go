@@ -62,12 +62,12 @@ type Manager interface {
 // In its present form, the lock manager's complexity scales linearly with the number of outstanding tickets per lock
 // path.
 type managerImpl struct {
-	sync                sync.Mutex
-	locks               map[string]*lockImpl
-	nextTicketId        int64
-	maintenanceInterval time.Duration
+	sync                    sync.Mutex
+	locks                   map[string]*lockImpl
+	nextTicketId            int64
+	maintenanceInterval     time.Duration
 	locksNeedingMaintenance []string
-	stopChan            chan struct{}
+	stopChan                chan struct{}
 }
 
 // New lock manager.
@@ -379,7 +379,7 @@ func (m *managerImpl) Inspect(path string) (state LockState, err error) {
 	// Build the lock state.
 	state.LockingId = lock.tickets[0].id
 	state.LockTimeout = lock.tickets[0].leaseTimeoutAt - monotime.Monotonic()
-	state.Acquirers = make([]LockAcquirerState, len(lock.tickets) - 1)
+	state.Acquirers = make([]LockAcquirerState, len(lock.tickets)-1)
 
 	for idx, ticket := range lock.tickets[1:] {
 		state.Acquirers[idx].Id = ticket.id

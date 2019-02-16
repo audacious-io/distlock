@@ -5,7 +5,7 @@ cover:
 	go tool cover -html=cover.out -o cover.html
 
 fmt:
-	go fmt .
+	go fmt . ./locking
 
 test:
 	go test -v ./...
