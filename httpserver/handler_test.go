@@ -4,13 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"testing"
 	"time"
-
-	"distlock/locking"
 )
 
 type SuccessResponseAcquirer struct {
@@ -30,50 +27,83 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
+type ErrorFixture struct {
+	Method             string
+	Path               string
+	Params             url.Values
+	ExpectedCode       string
+	ExpectedStatusCode int
+}
+
 func TestHandlerAcquireInvalid(t *testing.T) {
-	manager := locking.NewManager(locking.Config{})
-	server := httptest.NewServer(NewHandler(manager))
-	defer server.Close()
+	f := NewHandlerFixture(t)
+	defer f.Close()
 
-	// Test acquiring with missing timeouts.
-	resp := Post(t, server, "/test", url.Values{
-		"lock_timeout": []string{"1m"},
-	})
-	AssertErrorResponse(t, resp, "missing_lease_timeout", 400)
+	AssertErrors(f, []ErrorFixture{
+		// Missing parameters.
+		{
+			Method: "POST",
+			Path:   "/test",
+			Params: url.Values{
+				"lock_timeout": []string{"1m"},
+			},
+			ExpectedCode:       "missing_lease_timeout",
+			ExpectedStatusCode: 400,
+		},
 
-	resp = Post(t, server, "/test", url.Values{
-		"lease_timeout": []string{"1m"},
-	})
-	AssertErrorResponse(t, resp, "missing_lock_timeout", 400)
+		{
+			Method: "POST",
+			Path:   "/test",
+			Params: url.Values{
+				"lease_timeout": []string{"1m"},
+			},
+			ExpectedCode:       "missing_lock_timeout",
+			ExpectedStatusCode: 400,
+		},
 
-	// Test acquiring with invalid timeouts.
-	resp = Post(t, server, "/test", url.Values{
-		"lease_timeout": []string{"1m"},
-		"lock_timeout":  []string{"1"},
-	})
-	AssertErrorResponse(t, resp, "invalid_lock_timeout", 400)
+		// Invalid parameters.
+		{
+			Method: "POST",
+			Path:   "/test",
+			Params: url.Values{
+				"lock_timeout":  []string{"1m"},
+				"lease_timeout": []string{"1d"},
+			},
+			ExpectedCode:       "invalid_lease_timeout",
+			ExpectedStatusCode: 400,
+		},
 
-	resp = Post(t, server, "/test", url.Values{
-		"lease_timeout": []string{"1"},
-		"lock_timeout":  []string{"1m"},
-	})
-	AssertErrorResponse(t, resp, "invalid_lease_timeout", 400)
+		{
+			Method: "POST",
+			Path:   "/test",
+			Params: url.Values{
+				"lock_timeout":  []string{"123a"},
+				"lease_timeout": []string{"1m"},
+			},
+			ExpectedCode:       "invalid_lock_timeout",
+			ExpectedStatusCode: 400,
+		},
 
-	// Test acquiring with an invalid path.
-	resp = Post(t, server, "/test/", url.Values{
-		"lock_timeout":  []string{"1m"},
-		"lease_timeout": []string{"1m"},
+		// Invalid path.
+		{
+			Method: "POST",
+			Path:   "/test/",
+			Params: url.Values{
+				"id":            []string{"123"},
+				"lease_timeout": []string{"1m"},
+			},
+			ExpectedCode:       "not_found",
+			ExpectedStatusCode: 404,
+		},
 	})
-	AssertErrorResponse(t, resp, "not_found", 404)
 }
 
 func TestHandlerAcquireSuccessful(t *testing.T) {
-	manager := locking.NewManager(locking.Config{})
-	server := httptest.NewServer(NewHandler(manager))
-	defer server.Close()
+	f := NewHandlerFixture(t)
+	defer f.Close()
 
 	// Test acquiring successfully.
-	resp := Post(t, server, "/test", url.Values{
+	resp := f.Request("POST", "/test", url.Values{
 		"lock_timeout":  []string{"1m"},
 		"lease_timeout": []string{"1m"},
 	})
@@ -84,216 +114,224 @@ func TestHandlerAcquireSuccessful(t *testing.T) {
 	}
 	id, _ := strconv.ParseInt(body.Id, 10, 64)
 
-	locker, _ := manager.IsLocked("test")
+	locker, _ := f.Manager.IsLocked("test")
 	if locker != id {
 		t.Fatalf("Expected requestor to be locker")
 	}
 }
 
 func TestHandlerAcquireTimeout(t *testing.T) {
-	manager := locking.NewManager(locking.Config{})
-	server := httptest.NewServer(NewHandler(manager))
-	defer server.Close()
+	f := NewHandlerFixture(t)
+	defer f.Close()
 
 	// Acquire up front to cause waiting.
-	manager.Acquire("test", time.Minute, time.Minute)
+	f.Manager.Acquire("test", time.Minute, time.Minute)
 
 	// Test acquiring causing timeout.
-	resp := Post(t, server, "/test", url.Values{
-		"lock_timeout":  []string{"0"},
-		"lease_timeout": []string{"100ms"},
+	resp := f.Request("POST", "/test", url.Values{
+		"lock_timeout":  []string{"10ms"},
+		"lease_timeout": []string{"1m"},
 	})
 	AssertErrorResponse(t, resp, "timeout", 408)
 }
 
 func TestHandlerReleaseInvalid(t *testing.T) {
-	manager := locking.NewManager(locking.Config{})
-	server := httptest.NewServer(NewHandler(manager))
-	defer server.Close()
+	f := NewHandlerFixture(t)
+	defer f.Close()
 
-	// Test releasing with missing ID.
-	req, _ := http.NewRequest("DELETE", server.URL+"/test", nil)
-	resp, err := server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
+	AssertErrors(f, []ErrorFixture{
+		// Missing parameters.
+		{
+			Method:             "DELETE",
+			Path:               "/test",
+			ExpectedCode:       "missing_id",
+			ExpectedStatusCode: 400,
+		},
 
-	AssertErrorResponse(t, resp, "missing_id", 400)
+		// Invalid parameters.
+		{
+			Method: "DELETE",
+			Path:   "/test",
+			Params: url.Values{
+				"id": []string{"123a"},
+			},
+			ExpectedCode:       "invalid_id",
+			ExpectedStatusCode: 400,
+		},
 
-	// Test releasing with invalid ID.
-	req, _ = http.NewRequest("DELETE", server.URL+"/test?id=abc123", nil)
-	resp, err = server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
+		// Invalid path.
+		{
+			Method: "DELETE",
+			Path:   "/test/",
+			Params: url.Values{
+				"id": []string{"123"},
+			},
+			ExpectedCode:       "not_found",
+			ExpectedStatusCode: 404,
+		},
 
-	AssertErrorResponse(t, resp, "invalid_id", 400)
-
-	// Test releasing with invalid path.
-	req, _ = http.NewRequest("DELETE", server.URL+"/test/?id=123", nil)
-	resp, err = server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
-
-	AssertErrorResponse(t, resp, "not_found", 404)
-
-	// Test releasing with ID that is not the locker.
-	req, _ = http.NewRequest("DELETE", server.URL+"/test?id=123", nil)
-	resp, err = server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
-
-	AssertErrorResponse(t, resp, "not_found", 404)
+		// With ID that is not the locker.
+		{
+			Method: "DELETE",
+			Path:   "/test",
+			Params: url.Values{
+				"id": []string{"123"},
+			},
+			ExpectedCode:       "not_found",
+			ExpectedStatusCode: 404,
+		},
+	})
 }
 
 func TestHandlerReleaseLocker(t *testing.T) {
-	manager := locking.NewManager(locking.Config{})
-	server := httptest.NewServer(NewHandler(manager))
-	defer server.Close()
+	f := NewHandlerFixture(t)
+	defer f.Close()
 
 	// Acquire a ticket.
-	ticket, _ := manager.Acquire("test", time.Minute, time.Minute)
+	ticket, _ := f.Manager.Acquire("test", time.Minute, time.Minute)
 
 	// Test releasing with ID that is not the locker.
-	req, _ := http.NewRequest("DELETE", server.URL+fmt.Sprintf("/test?id=%d", ticket.Id()), nil)
-	resp, err := server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
-
+	resp := f.Request("DELETE", "/test", url.Values{
+		"id": []string{fmt.Sprintf("%d", ticket.Id())},
+	})
 	AssertSuccessResponse(t, resp)
 
-	locker, err := manager.IsLocked("test")
+	locker, err := f.Manager.IsLocked("test")
 	if locker != 0 || err != nil {
 		t.Fatalf("Unexpected state after releasing")
 	}
 }
 
 func TestHandlerExtendInvalid(t *testing.T) {
-	manager := locking.NewManager(locking.Config{})
-	server := httptest.NewServer(NewHandler(manager))
-	defer server.Close()
+	f := NewHandlerFixture(t)
+	defer f.Close()
 
-	// Test extending with missing parameters.
-	req, _ := http.NewRequest("PATCH", server.URL+"/test?lease_timeout=1m", nil)
-	resp, err := server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
+	AssertErrors(f, []ErrorFixture{
+		// Missing parameters.
+		{
+			Method: "PATCH",
+			Path:   "/test",
+			Params: url.Values{
+				"lease_timeout": []string{"1m"},
+			},
+			ExpectedCode:       "missing_id",
+			ExpectedStatusCode: 400,
+		},
 
-	AssertErrorResponse(t, resp, "missing_id", 400)
+		{
+			Method: "PATCH",
+			Path:   "/test",
+			Params: url.Values{
+				"id": []string{"123"},
+			},
+			ExpectedCode:       "missing_lease_timeout",
+			ExpectedStatusCode: 400,
+		},
 
-	req, _ = http.NewRequest("PATCH", server.URL+"/test?id=123", nil)
-	resp, err = server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
+		// Invalid parameters.
+		{
+			Method: "PATCH",
+			Path:   "/test",
+			Params: url.Values{
+				"id":            []string{"123"},
+				"lease_timeout": []string{"1d"},
+			},
+			ExpectedCode:       "invalid_lease_timeout",
+			ExpectedStatusCode: 400,
+		},
 
-	AssertErrorResponse(t, resp, "missing_lease_timeout", 400)
+		{
+			Method: "PATCH",
+			Path:   "/test",
+			Params: url.Values{
+				"id":            []string{"123a"},
+				"lease_timeout": []string{"1m"},
+			},
+			ExpectedCode:       "invalid_id",
+			ExpectedStatusCode: 400,
+		},
 
-	// Test extending with invalid ID.
-	req, _ = http.NewRequest("PATCH", server.URL+"/test?id=abc12&lease_timeout=1m", nil)
-	resp, err = server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
+		// Invalid path.
+		{
+			Method: "PATCH",
+			Path:   "/test/",
+			Params: url.Values{
+				"id":            []string{"123"},
+				"lease_timeout": []string{"1m"},
+			},
+			ExpectedCode:       "not_found",
+			ExpectedStatusCode: 404,
+		},
 
-	AssertErrorResponse(t, resp, "invalid_id", 400)
-
-	// Test extending with invalid lease timeout.
-	req, _ = http.NewRequest("PATCH", server.URL+"/test?id=123&lease_timeout=1d", nil)
-	resp, err = server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
-
-	AssertErrorResponse(t, resp, "invalid_lease_timeout", 400)
-
-	// Test extending with invalid path.
-	req, _ = http.NewRequest("PATCH", server.URL+"/test/?id=123&lease_timeout=1m", nil)
-	resp, err = server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
-
-	AssertErrorResponse(t, resp, "not_found", 404)
-
-	// Test extending with ID that is not the locker.
-	req, _ = http.NewRequest("PATCH", server.URL+"/test?id=123&lease_timeout=1m", nil)
-	resp, err = server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
-
-	AssertErrorResponse(t, resp, "not_found", 404)
+		// With ID that is not the locker.
+		{
+			Method: "PATCH",
+			Path:   "/test",
+			Params: url.Values{
+				"id":            []string{"123"},
+				"lease_timeout": []string{"1m"},
+			},
+			ExpectedCode:       "not_found",
+			ExpectedStatusCode: 404,
+		},
+	})
 }
 
 func TestHandlerExtendLocker(t *testing.T) {
-	manager := locking.NewManager(locking.Config{})
-	server := httptest.NewServer(NewHandler(manager))
-	defer server.Close()
+	f := NewHandlerFixture(t)
+	defer f.Close()
 
 	// Acquire a ticket.
-	ticket, _ := manager.Acquire("test", time.Minute, time.Minute)
-	state, _ := manager.Inspect("test")
+	ticket, _ := f.Manager.Acquire("test", time.Minute, time.Minute)
+	state, _ := f.Manager.Inspect("test")
 
 	// Test extending with ID that is not the locker.
-	req, _ := http.NewRequest("PATCH", server.URL+fmt.Sprintf("/test?id=%d&lease_timeout=5m", ticket.Id()), nil)
-	resp, err := server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
-
+	resp := f.Request("PATCH", "/test", url.Values{
+		"id":            []string{fmt.Sprintf("%d", ticket.Id())},
+		"lease_timeout": []string{"5m"},
+	})
 	AssertSuccessResponse(t, resp)
 
-	newState, _ := manager.Inspect("test")
+	newState, _ := f.Manager.Inspect("test")
 	if newState.LockingId != ticket.Id() || newState.LockTimeout <= state.LockTimeout {
 		t.Fatalf("Unexpected state after releasing")
 	}
 }
 
 func TestHandlerInspectInvalid(t *testing.T) {
-	manager := locking.NewManager(locking.Config{})
-	server := httptest.NewServer(NewHandler(manager))
-	defer server.Close()
+	f := NewHandlerFixture(t)
+	defer f.Close()
 
-	// Test inspecting with invalid path.
-	req, _ := http.NewRequest("GET", server.URL+"/test/", nil)
-	resp, err := server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
+	AssertErrors(f, []ErrorFixture{
+		// Invalid path.
+		{
+			Method:             "GET",
+			Path:               "/test/",
+			ExpectedCode:       "not_found",
+			ExpectedStatusCode: 404,
+		},
 
-	AssertErrorResponse(t, resp, "not_found", 404)
-
-	// Test inspecting lock that is not locked.
-	req, _ = http.NewRequest("GET", server.URL+"/test", nil)
-	resp, err = server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
-
-	AssertErrorResponse(t, resp, "not_found", 404)
+		// Not locked path.
+		{
+			Method:             "GET",
+			Path:               "/test",
+			ExpectedCode:       "not_found",
+			ExpectedStatusCode: 404,
+		},
+	})
 }
 
 func TestHandlerInspectLocked(t *testing.T) {
-	manager := locking.NewManager(locking.Config{})
-	server := httptest.NewServer(NewHandler(manager))
-	defer server.Close()
+	f := NewHandlerFixture(t)
+	defer f.Close()
 
 	// Acquire a ticket.
-	ticketA, _ := manager.Acquire("test", time.Minute, time.Minute)
-	ticketB, _ := manager.Acquire("test", time.Minute, time.Minute)
-	ticketC, _ := manager.Acquire("test", time.Minute, time.Minute)
+	ticketA, _ := f.Manager.Acquire("test", time.Minute, time.Minute)
+	ticketB, _ := f.Manager.Acquire("test", time.Minute, time.Minute)
+	ticketC, _ := f.Manager.Acquire("test", time.Minute, time.Minute)
 
 	// Test extending with ID that is not the locker.
-	req, _ := http.NewRequest("GET", server.URL+"/test", nil)
-	resp, err := server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
+	resp := f.Request("GET", "/test", nil)
 
 	body := AssertSuccessResponse(t, resp)
 	t.Logf("Inspected body: %v", body)
@@ -324,15 +362,6 @@ func TestHandlerInspectLocked(t *testing.T) {
 	}
 }
 
-func Post(t *testing.T, server *httptest.Server, path string, form url.Values) *http.Response {
-	resp, err := server.Client().PostForm(server.URL+path, form)
-	if err != nil {
-		t.Fatalf("Error performing request: %v", err)
-	}
-
-	return resp
-}
-
 func AssertErrorResponse(t *testing.T, resp *http.Response, code string, statusCode int) {
 	if resp.StatusCode != statusCode {
 		t.Fatalf("Expected status code %d, got %d", statusCode, resp.StatusCode)
@@ -361,4 +390,11 @@ func AssertSuccessResponse(t *testing.T, resp *http.Response) SuccessResponse {
 	}
 
 	return body
+}
+
+func AssertErrors(f *HandlerFixture, fixtures []ErrorFixture) {
+	for _, fix := range fixtures {
+		resp := f.Request(fix.Method, fix.Path, fix.Params)
+		AssertErrorResponse(f.t, resp, fix.ExpectedCode, fix.ExpectedStatusCode)
+	}
 }
