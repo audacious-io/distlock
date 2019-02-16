@@ -121,6 +121,53 @@ func TestManagerAcquireSecondTimesOutWhileAcquiring(t *testing.T) {
 	AssertPathLocked(t, manager, "a", 0)
 }
 
+func TestManagerAcquireSecondTimesOutImmediately(t *testing.T) {
+	manager := NewManager(Config{MaintenanceInterval: timeScale})
+	go manager.Start()
+	defer manager.Stop()
+
+	ticketA, err := manager.Acquire("a", 10*timeScale, 20*timeScale)
+
+	if err != nil {
+		t.Fatalf("Unexpected error acquiring lock: %v", err)
+	}
+	if ticketA == nil {
+		t.Fatalf("Acquired ticket is unexpectedly nil")
+	}
+
+	// Assert that the lock is immediately acquired.
+	select {
+	case status := <-ticketA.Acquired():
+		if status != true {
+			t.Fatalf("Lock was not immediately acquired")
+		}
+	default:
+		t.Fatalf("No lock indication was emitted from the ticket")
+	}
+
+	// Attempt to acquire the lock while another caller is holding the lock.
+	ticketB, err := manager.Acquire("a", 0, 20*timeScale)
+
+	if err != nil {
+		t.Fatalf("Unexpected error acquiring lock: %v", err)
+	}
+	if ticketB == nil {
+		t.Fatalf("Acquired ticket is unexpectedly nil")
+	}
+
+	select {
+	case status := <-ticketB.Acquired():
+		if status {
+			t.Fatalf("Lock was unexpectedly acquired after waiting for timeout")
+		}
+	default:
+		t.Fatalf("Lock did not report acquisition state after timeout")
+	}
+
+	// Assert that the path is indeed locked.
+	AssertPathLocked(t, manager, "a", ticketA.Id())
+}
+
 func TestManagerAcquireSecondAcquiresAfterFirstTimeout(t *testing.T) {
 	manager := NewManager(Config{MaintenanceInterval: timeScale})
 	go manager.Start()
@@ -459,7 +506,108 @@ func TestManagerAcquireSecondAcquiresAfterFirstExtendedTimeout(t *testing.T) {
 	AssertPathLocked(t, manager, "a", 0)
 }
 
-func AssertPathLocked(t *testing.T, manager Manager, path string, expected uint64) {
+func TestManagerInspect(t *testing.T) {
+	manager := NewManager(Config{MaintenanceInterval: timeScale})
+	go manager.Start()
+	defer manager.Stop()
+
+	// Test inspecting with no locks held.
+	state, err := manager.Inspect("a")
+	if err != nil {
+		t.Fatalf("Failed to inspect lock: %v", err)
+	}
+
+	if state.LockingId != 0 {
+		t.Errorf("Expected no locker")
+	}
+	if state.LockTimeout != 0 {
+		t.Errorf("Expected no lock timeout")
+	}
+	if len(state.Acquirers) > 0 {
+		t.Errorf("Expected no acquirers")
+	}
+
+	// Test inspecting with one lock.
+	ticketA, _ := manager.Acquire("a", 10*timeScale, 10*timeScale)
+
+	state, err = manager.Inspect("a")
+	if err != nil {
+		t.Fatalf("Failed to inspect lock: %v", err)
+	}
+
+	if state.LockingId != ticketA.Id() {
+		t.Errorf("Expected lock to be held by %d", ticketA.Id())
+	}
+	if state.LockTimeout <= 0 {
+		t.Errorf("Expected lock timeout")
+	}
+	if len(state.Acquirers) > 0 {
+		t.Errorf("Expected no acquirers")
+	}
+
+	// Test inspecting with multiple locks.
+	ticketB, _ := manager.Acquire("a", 10*timeScale, 10*timeScale)
+	ticketC, _ := manager.Acquire("a", 10*timeScale, 10*timeScale)
+	manager.Acquire("b", 10*timeScale, 10*timeScale)
+
+	state, err = manager.Inspect("a")
+	if err != nil {
+		t.Fatalf("Failed to inspect lock: %v", err)
+	}
+
+	if state.LockingId != ticketA.Id() {
+		t.Errorf("Expected lock to be held by %d", ticketA.Id())
+	}
+	if state.LockTimeout <= 0 {
+		t.Errorf("Expected lock timeout")
+	}
+	if len(state.Acquirers) != 2 {
+		t.Errorf("Expected 2 acquirers")
+	}
+
+	if state.Acquirers[0].Id != ticketB.Id() {
+		t.Errorf("Expected acquirer #1 to be %d", ticketB.Id())
+	}
+	if state.Acquirers[0].Timeout <= 0 {
+		t.Errorf("Expected acquirer #1 to have timeout")
+	}
+	if state.Acquirers[1].Id != ticketC.Id() {
+		t.Errorf("Expected acquirer #2 to be %d", ticketC.Id())
+	}
+	if state.Acquirers[1].Timeout <= 0 {
+		t.Errorf("Expected acquirer #2 to have timeout")
+	}
+}
+
+func TestManagerExtendNonExistent(t *testing.T) {
+	manager := NewManager(Config{MaintenanceInterval: timeScale})
+	go manager.Start()
+	defer manager.Stop()
+
+	found, err := manager.Extend("a", 1, time.Second)
+	if err != nil {
+		t.Fatalf("Failed to extend lock: %v", err)
+	}
+	if found {
+		t.Fatalf("Lock unexpectedly found")
+	}
+}
+
+func TestManagerReleaseNonExistent(t *testing.T) {
+	manager := NewManager(Config{MaintenanceInterval: timeScale})
+	go manager.Start()
+	defer manager.Stop()
+
+	found, err := manager.Release("a", 1)
+	if err != nil {
+		t.Fatalf("Failed to release lock: %v", err)
+	}
+	if found {
+		t.Fatalf("Lock unexpectedly found")
+	}
+}
+
+func AssertPathLocked(t *testing.T, manager Manager, path string, expected int64) {
 	locker, err := manager.IsLocked("a")
 	if err != nil {
 		t.Fatalf("Unexpected error checking lock state for %s: %v", path, err)

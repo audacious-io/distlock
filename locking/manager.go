@@ -33,17 +33,20 @@ type Manager interface {
 	//
 	// If the ID is for a ticket that is still waiting to be locked, the ticket is informed of failed acquisition and
 	// removed from the queue. Returns whether the ticket was found.
-	Release(path string, id uint64) (found bool, err error)
+	Release(path string, id int64) (found bool, err error)
 
 	// Extend a lease.
 	//
 	// Returns whether the lease was found and extended.
-	Extend(path string, id uint64, timeout time.Duration) (found bool, err error)
+	Extend(path string, id int64, timeout time.Duration) (found bool, err error)
 
 	// Test if a path is locked.
 	//
 	// Returns the ID of the ticket holding the lock if the path is locked, otherwise zero.
-	IsLocked(path string) (locker uint64, err error)
+	IsLocked(path string) (locker int64, err error)
+
+	// Inpect lock state.
+	Inspect(path string) (state LockState, err error)
 }
 
 // Lock manager implementation.
@@ -61,7 +64,7 @@ type managerImpl struct {
 	sync                sync.Mutex
 	maintainChan        chan string
 	locks               map[string]*lockImpl
-	nextTicketId        uint64
+	nextTicketId        int64
 	maintenanceInterval time.Duration
 }
 
@@ -81,7 +84,7 @@ func NewManager(config Config) Manager {
 	}
 }
 
-func (m *managerImpl) Release(path string, id uint64) (bool, error) {
+func (m *managerImpl) Release(path string, id int64) (bool, error) {
 	// Clean and validate the path.
 	path, err := ValidateLockPath(path)
 	if err != nil {
@@ -128,7 +131,7 @@ func (m *managerImpl) Release(path string, id uint64) (bool, error) {
 	return found, nil
 }
 
-func (m *managerImpl) Extend(path string, id uint64, timeout time.Duration) (bool, error) {
+func (m *managerImpl) Extend(path string, id int64, timeout time.Duration) (bool, error) {
 	// Clean and validate the path.
 	path, err := ValidateLockPath(path)
 	if err != nil {
@@ -288,7 +291,7 @@ func (m *managerImpl) Acquire(path string, lockTimeout time.Duration, leaseTimeo
 	return ticket, nil
 }
 
-func (m *managerImpl) IsLocked(path string) (locker uint64, err error) {
+func (m *managerImpl) IsLocked(path string) (locker int64, err error) {
 	// Clean and validate the path.
 	path, err = ValidateLockPath(path)
 	if err != nil {
@@ -306,5 +309,35 @@ func (m *managerImpl) IsLocked(path string) (locker uint64, err error) {
 	}
 
 	locker = lock.tickets[0].id
+	return
+}
+
+func (m *managerImpl) Inspect(path string) (state LockState, err error) {
+	// Clean and validate the path.
+	path, err = ValidateLockPath(path)
+	if err != nil {
+		return
+	}
+
+	// Lock the manager.
+	m.sync.Lock()
+	defer m.sync.Unlock()
+
+	// Fetch the lock state.
+	lock, ok := m.locks[path]
+	if !ok || len(lock.tickets) == 0 {
+		return
+	}
+
+	// Build the lock state.
+	state.LockingId = lock.tickets[0].id
+	state.LockTimeout = lock.tickets[0].leaseTimeoutAt - monotime.Monotonic()
+	state.Acquirers = make([]LockAcquirerState, len(lock.tickets) - 1)
+
+	for idx, ticket := range lock.tickets[1:] {
+		state.Acquirers[idx].Id = ticket.id
+		state.Acquirers[idx].Timeout = ticket.acquireTimeoutAt - monotime.Monotonic()
+	}
+
 	return
 }

@@ -12,7 +12,7 @@ type Ticket interface {
 	// Ticket ID.
 	//
 	// Identifies the specific locking attempt or lease.
-	Id() uint64
+	Id() int64
 
 	// Acquired.
 	//
@@ -23,7 +23,7 @@ type Ticket interface {
 // Lock ticket implementation.
 type ticketImpl struct {
 	// Lease ID.
-	id uint64
+	id int64
 
 	// First lease timeout upon acquisition.
 	firstLeaseTimeout time.Duration
@@ -38,7 +38,7 @@ type ticketImpl struct {
 	leaseTimeoutAt time.Duration
 }
 
-func (t *ticketImpl) Id() uint64 {
+func (t *ticketImpl) Id() int64 {
 	return t.id
 }
 
