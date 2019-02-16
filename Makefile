@@ -1,7 +1,7 @@
 all:
 
 fmt:
-	go fmt -w .
+	go fmt .
 
 test:
 	go test ./...

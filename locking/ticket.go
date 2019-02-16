@@ -31,11 +31,11 @@ type ticketImpl struct {
 	// Acquisition notification channel.
 	acquiredChan chan bool
 
-	// Acquisition timeout as UNIX nanosecond timestamp.
-	acquireTimeoutAt int64
+	// Acquisition timeout as a monotonic timestamp.
+	acquireTimeoutAt time.Duration
 
-	// Lease timeout as UNIX nanosecond timestamp.
-	leaseTimeoutAt int64
+	// Lease timeout as a monotonic timestamp.
+	leaseTimeoutAt time.Duration
 }
 
 func (t *ticketImpl) Id() uint64 {

@@ -3,6 +3,8 @@ package locking
 import (
 	"sync"
 	"time"
+
+	"github.com/spacemonkeygo/monotime"
 )
 
 // Lock manager.
@@ -126,7 +128,7 @@ func (m *managerImpl) maintainPath(path string) {
 
 	// Determine which tickets are to survive.
 	var nextTickets []*ticketImpl
-	now := time.Now().UnixNano()
+	now := monotime.Monotonic()
 
 	for _, ticket := range curLock.tickets {
 		if ticket.leaseTimeoutAt > 0 {
@@ -148,7 +150,7 @@ func (m *managerImpl) maintainPath(path string) {
 	if len(nextTickets) > 0 && nextTickets[0].leaseTimeoutAt == 0 {
 		ticket := nextTickets[0]
 
-		ticket.leaseTimeoutAt = time.Now().Add(ticket.firstLeaseTimeout).UnixNano()
+		ticket.leaseTimeoutAt = monotime.Monotonic() + ticket.firstLeaseTimeout
 		ticket.acquiredChan <- true
 
 		go func() {
@@ -213,7 +215,7 @@ func (m *managerImpl) Acquire(path string, lockTimeout time.Duration, leaseTimeo
 			tickets: []*ticketImpl{ticket},
 		}
 
-		ticket.leaseTimeoutAt = time.Now().Add(leaseTimeout).UnixNano()
+		ticket.leaseTimeoutAt = monotime.Monotonic() + leaseTimeout
 		ticket.acquiredChan <- true
 
 		go func() {
@@ -230,7 +232,7 @@ func (m *managerImpl) Acquire(path string, lockTimeout time.Duration, leaseTimeo
 			tickets: append(prevLock.tickets, ticket),
 		}
 
-		ticket.acquireTimeoutAt = time.Now().Add(lockTimeout).UnixNano()
+		ticket.acquireTimeoutAt = monotime.Monotonic() + lockTimeout
 
 		go func() {
 			<-time.After(lockTimeout)
