@@ -1,6 +1,7 @@
 package locking
 
 import (
+	"math/rand"
 	"sync"
 	"time"
 
@@ -70,6 +71,10 @@ type managerImpl struct {
 
 // New lock manager.
 func NewManager(config Config) Manager {
+	// Seed the first ticket ID.
+	nextTicketId := rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
+
+	// Default configuration.
 	maintenanceInterval := 10 * time.Millisecond
 
 	if config.MaintenanceInterval > 0 {
@@ -78,7 +83,7 @@ func NewManager(config Config) Manager {
 
 	return &managerImpl{
 		locks:               make(map[string]*lockImpl),
-		nextTicketId:        1,
+		nextTicketId:        nextTicketId,
 		maintainChan:        make(chan string, 1024),
 		maintenanceInterval: maintenanceInterval,
 	}
@@ -248,6 +253,10 @@ func (m *managerImpl) Acquire(path string, lockTimeout time.Duration, leaseTimeo
 	prevLock, _ := m.locks[path]
 
 	// Create a ticket and evaluate locking.
+	if m.nextTicketId == 0 {
+		m.nextTicketId++
+	}
+
 	ticketId := m.nextTicketId
 	m.nextTicketId++
 
