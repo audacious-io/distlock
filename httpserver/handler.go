@@ -23,12 +23,15 @@ func NewHandler(manager locking.Manager) http.Handler {
 func (h *handler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	var err error
 
-	if req.Method == "POST" {
+	switch req.Method {
+	case "POST":
 		err = h.serveAcquire(resp, req)
-	} else if req.Method == "DELETE" {
+	case "DELETE":
 		err = h.serveRelease(resp, req)
-	} else if req.Method == "PATCH" {
+	case "PATCH":
 		err = h.serveExtend(resp, req)
+	case "GET":
+		err = h.serveInspect(resp, req)
 	}
 
 	if err != nil {
@@ -157,4 +160,36 @@ func (h *handler) serveExtend(resp http.ResponseWriter, req *http.Request) error
 	}
 
 	return respondNotFound(resp)
+}
+
+func (h *handler) serveInspect(resp http.ResponseWriter, req *http.Request) error {
+	// Parse the path.
+	path, err := locking.ValidateLockPath(req.URL.Path)
+	if err != nil {
+		return respondNotFound(resp)
+	}
+
+	// Inspect the lock.
+	state, err := h.manager.Inspect(path)
+	if err != nil {
+		return err
+	}
+
+	if state.LockingId == 0 {
+		return respondNotFound(resp)
+	}
+
+	acquirers := make([]interface{}, len(state.Acquirers))
+	for idx, acquirer := range state.Acquirers {
+		acquirers[idx] = map[string]interface{}{
+			"id":      fmt.Sprintf("%d", acquirer.Id),
+			"timeout": FormatDuration(acquirer.Timeout),
+		}
+	}
+
+	return respondJson(resp, map[string]interface{}{
+		"locking_id":   fmt.Sprintf("%d", state.LockingId),
+		"lock_timeout": FormatDuration(state.LockTimeout),
+		"acquirers":    acquirers,
+	}, 200)
 }

@@ -13,8 +13,16 @@ import (
 	"distlock/locking"
 )
 
+type SuccessResponseAcquirer struct {
+	Id      string `json:"id"`
+	Timeout string `json:"timeout"`
+}
+
 type SuccessResponse struct {
-	Id string `json:"id"`
+	Id          string                    `json:"id"`
+	LockingId   string                    `json:"locking_id"`
+	LockTimeout string                    `json:"lock_timeout"`
+	Acquirers   []SuccessResponseAcquirer `json:"acquirers"`
 }
 
 type ErrorResponse struct {
@@ -103,7 +111,7 @@ func TestHandlerReleaseInvalid(t *testing.T) {
 	server := httptest.NewServer(NewHandler(manager))
 	defer server.Close()
 
-	// Test acquiring with missing ID.
+	// Test releasing with missing ID.
 	req, _ := http.NewRequest("DELETE", server.URL+"/test", nil)
 	resp, err := server.Client().Do(req)
 	if err != nil {
@@ -112,7 +120,7 @@ func TestHandlerReleaseInvalid(t *testing.T) {
 
 	AssertErrorResponse(t, resp, "missing_id", 400)
 
-	// Test acquiring with invalid ID.
+	// Test releasing with invalid ID.
 	req, _ = http.NewRequest("DELETE", server.URL+"/test?id=abc123", nil)
 	resp, err = server.Client().Do(req)
 	if err != nil {
@@ -121,7 +129,7 @@ func TestHandlerReleaseInvalid(t *testing.T) {
 
 	AssertErrorResponse(t, resp, "invalid_id", 400)
 
-	// Test acquiring with invalid path.
+	// Test releasing with invalid path.
 	req, _ = http.NewRequest("DELETE", server.URL+"/test/?id=123", nil)
 	resp, err = server.Client().Do(req)
 	if err != nil {
@@ -130,7 +138,7 @@ func TestHandlerReleaseInvalid(t *testing.T) {
 
 	AssertErrorResponse(t, resp, "not_found", 404)
 
-	// Test acquiring with ID that is not the locker.
+	// Test releasing with ID that is not the locker.
 	req, _ = http.NewRequest("DELETE", server.URL+"/test?id=123", nil)
 	resp, err = server.Client().Do(req)
 	if err != nil {
@@ -148,7 +156,7 @@ func TestHandlerReleaseLocker(t *testing.T) {
 	// Acquire a ticket.
 	ticket, _ := manager.Acquire("test", time.Minute, time.Minute)
 
-	// Test acquiring with ID that is not the locker.
+	// Test releasing with ID that is not the locker.
 	req, _ := http.NewRequest("DELETE", server.URL+fmt.Sprintf("/test?id=%d", ticket.Id()), nil)
 	resp, err := server.Client().Do(req)
 	if err != nil {
@@ -168,7 +176,7 @@ func TestHandlerExtendInvalid(t *testing.T) {
 	server := httptest.NewServer(NewHandler(manager))
 	defer server.Close()
 
-	// Test acquiring with missing parameters.
+	// Test extending with missing parameters.
 	req, _ := http.NewRequest("PATCH", server.URL+"/test?lease_timeout=1m", nil)
 	resp, err := server.Client().Do(req)
 	if err != nil {
@@ -185,7 +193,7 @@ func TestHandlerExtendInvalid(t *testing.T) {
 
 	AssertErrorResponse(t, resp, "missing_lease_timeout", 400)
 
-	// Test acquiring with invalid ID.
+	// Test extending with invalid ID.
 	req, _ = http.NewRequest("PATCH", server.URL+"/test?id=abc12&lease_timeout=1m", nil)
 	resp, err = server.Client().Do(req)
 	if err != nil {
@@ -194,7 +202,7 @@ func TestHandlerExtendInvalid(t *testing.T) {
 
 	AssertErrorResponse(t, resp, "invalid_id", 400)
 
-	// Test acquiring with invalid lease timeout.
+	// Test extending with invalid lease timeout.
 	req, _ = http.NewRequest("PATCH", server.URL+"/test?id=123&lease_timeout=1d", nil)
 	resp, err = server.Client().Do(req)
 	if err != nil {
@@ -203,7 +211,7 @@ func TestHandlerExtendInvalid(t *testing.T) {
 
 	AssertErrorResponse(t, resp, "invalid_lease_timeout", 400)
 
-	// Test acquiring with invalid path.
+	// Test extending with invalid path.
 	req, _ = http.NewRequest("PATCH", server.URL+"/test/?id=123&lease_timeout=1m", nil)
 	resp, err = server.Client().Do(req)
 	if err != nil {
@@ -212,7 +220,7 @@ func TestHandlerExtendInvalid(t *testing.T) {
 
 	AssertErrorResponse(t, resp, "not_found", 404)
 
-	// Test acquiring with ID that is not the locker.
+	// Test extending with ID that is not the locker.
 	req, _ = http.NewRequest("PATCH", server.URL+"/test?id=123&lease_timeout=1m", nil)
 	resp, err = server.Client().Do(req)
 	if err != nil {
@@ -231,7 +239,7 @@ func TestHandlerExtendLocker(t *testing.T) {
 	ticket, _ := manager.Acquire("test", time.Minute, time.Minute)
 	state, _ := manager.Inspect("test")
 
-	// Test acquiring with ID that is not the locker.
+	// Test extending with ID that is not the locker.
 	req, _ := http.NewRequest("PATCH", server.URL+fmt.Sprintf("/test?id=%d&lease_timeout=5m", ticket.Id()), nil)
 	resp, err := server.Client().Do(req)
 	if err != nil {
@@ -243,6 +251,76 @@ func TestHandlerExtendLocker(t *testing.T) {
 	newState, _ := manager.Inspect("test")
 	if newState.LockingId != ticket.Id() || newState.LockTimeout <= state.LockTimeout {
 		t.Fatalf("Unexpected state after releasing")
+	}
+}
+
+func TestHandlerInspectInvalid(t *testing.T) {
+	manager := locking.NewManager(locking.Config{})
+	server := httptest.NewServer(NewHandler(manager))
+	defer server.Close()
+
+	// Test inspecting with invalid path.
+	req, _ := http.NewRequest("GET", server.URL+"/test/", nil)
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("Error performing request: %v", err)
+	}
+
+	AssertErrorResponse(t, resp, "not_found", 404)
+
+	// Test inspecting lock that is not locked.
+	req, _ = http.NewRequest("GET", server.URL+"/test", nil)
+	resp, err = server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("Error performing request: %v", err)
+	}
+
+	AssertErrorResponse(t, resp, "not_found", 404)
+}
+
+func TestHandlerInspectLocked(t *testing.T) {
+	manager := locking.NewManager(locking.Config{})
+	server := httptest.NewServer(NewHandler(manager))
+	defer server.Close()
+
+	// Acquire a ticket.
+	ticketA, _ := manager.Acquire("test", time.Minute, time.Minute)
+	ticketB, _ := manager.Acquire("test", time.Minute, time.Minute)
+	ticketC, _ := manager.Acquire("test", time.Minute, time.Minute)
+
+	// Test extending with ID that is not the locker.
+	req, _ := http.NewRequest("GET", server.URL+"/test", nil)
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("Error performing request: %v", err)
+	}
+
+	body := AssertSuccessResponse(t, resp)
+	t.Logf("Inspected body: %v", body)
+
+	if body.LockingId != fmt.Sprintf("%d", ticketA.Id()) {
+		t.Fatalf("Expected locking ID to be %d, but it is %s", ticketA.Id(), body.LockingId)
+	}
+	if body.LockTimeout == "" || body.LockTimeout == "0" {
+		t.Fatalf("Unxpected lock timeout: %s", body.LockTimeout)
+	}
+
+	if len(body.Acquirers) != 2 {
+		t.Fatalf("Expected 2 acquirers in response")
+	}
+
+	if body.Acquirers[0].Id != fmt.Sprintf("%d", ticketB.Id()) {
+		t.Fatalf("Expected acquirer #1 ID to be %d, but it is %s", ticketB.Id(), body.Acquirers[0].Id)
+	}
+	if body.Acquirers[0].Timeout == "" || body.Acquirers[0].Timeout == "0" {
+		t.Fatalf("Unxpected acquirer #1 timeout: %s", body.Acquirers[0].Timeout)
+	}
+
+	if body.Acquirers[1].Id != fmt.Sprintf("%d", ticketC.Id()) {
+		t.Fatalf("Expected acquirer #2 ID to be %d, but it is %s", ticketB.Id(), body.Acquirers[1].Id)
+	}
+	if body.Acquirers[1].Timeout == "" || body.Acquirers[1].Timeout == "0" {
+		t.Fatalf("Unxpected acquirer #2 timeout: %s", body.Acquirers[1].Timeout)
 	}
 }
 

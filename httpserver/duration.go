@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
 	"time"
@@ -41,4 +42,17 @@ func ParseDuration(dur string) (time.Duration, error) {
 	}
 
 	return result, nil
+}
+
+// Format a duration.
+func FormatDuration(dur time.Duration) string {
+	if dur < 0 {
+		return "0"
+	}
+
+	if dur >= 5*time.Second {
+		return fmt.Sprintf("%.3fs", float64(dur)/float64(time.Second))
+	}
+
+	return fmt.Sprintf("%.3fms", float64(dur)/float64(time.Millisecond))
 }
