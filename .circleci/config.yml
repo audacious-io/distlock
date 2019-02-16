@@ -1,0 +1,21 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: circleci/golang:1.11
+
+    working_directory: ~/repo
+
+    steps:
+      - checkout
+
+      - run:
+          name: Test
+          command: make test
+
+workflows:
+  version: 2
+
+  test:
+    jobs:
+      - test:
