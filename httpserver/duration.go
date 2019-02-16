@@ -27,16 +27,16 @@ func ParseDuration(dur string) (time.Duration, error) {
 	}
 
 	// Parse the duration into something useful.
-	numerator, _ := strconv.ParseInt(match[0], 10, 64)
+	numerator, _ := strconv.ParseInt(match[1], 10, 64)
 	result := time.Duration(numerator)
 
-	if match[1] == "ms" {
+	if match[2] == "ms" {
 		result = result * time.Millisecond
-	} else if match[1] == "s" {
+	} else if match[2] == "s" {
 		result = result * time.Second
-	} else if match[1] == "m" {
+	} else if match[2] == "m" {
 		result = result * time.Minute
-	} else if match[1] == "h" {
+	} else if match[2] == "h" {
 		result = result * time.Hour
 	}
 
