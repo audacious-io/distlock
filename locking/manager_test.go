@@ -353,6 +353,112 @@ func TestManagerAcquireCanceledImmediately(t *testing.T) {
 	AssertPathLocked(t, manager, "a", ticketB.Id())
 }
 
+func TestManagerAcquireSecondAcquiresAfterFirstExtendedTimeout(t *testing.T) {
+	manager := NewManager(Config{MaintenanceInterval: timeScale})
+	go manager.Start()
+	defer manager.Stop()
+
+	ticketA, err := manager.Acquire("a", 10*timeScale, 10*timeScale)
+
+	if err != nil {
+		t.Fatalf("Unexpected error acquiring lock: %v", err)
+	}
+	if ticketA == nil {
+		t.Fatalf("Acquired ticket is unexpectedly nil")
+	}
+
+	// Assert that the lock is immediately acquired.
+	select {
+	case status := <-ticketA.Acquired():
+		if status != true {
+			t.Fatalf("Lock was not immediately acquired")
+		}
+	default:
+		t.Fatalf("No lock indication was emitted from the ticket")
+	}
+
+	// Attempt to acquire the lock while another caller is holding the lock.
+	ticketB, err := manager.Acquire("a", 20*timeScale, 10*timeScale)
+
+	if err != nil {
+		t.Fatalf("Unexpected error acquiring lock: %v", err)
+	}
+	if ticketB == nil {
+		t.Fatalf("Acquired ticket is unexpectedly nil")
+	}
+
+	// Assert that the lock is not immediately acquired.
+	select {
+	case <-ticketB.Acquired():
+		t.Fatalf("Lock status was unexpectedly returned immediately")
+	default:
+	}
+
+	// Assert that the path is indeed locked.
+	AssertPathLocked(t, manager, "a", ticketA.Id())
+
+	// Assert that after a half a second, the lock is still held by ticket A.
+	time.Sleep(5 * timeScale)
+
+	select {
+	case <-ticketB.Acquired():
+		t.Fatalf("Lock status was returned")
+	default:
+	}
+
+	AssertPathLocked(t, manager, "a", ticketA.Id())
+
+	// Extend lock A by another period.
+	found, err := manager.Extend("a", ticketA.Id(), 10*timeScale)
+	if err != nil {
+		t.Fatalf("Failed to extend lock: %v", err)
+	}
+	if !found {
+		t.Fatalf("Lock was not found when trying to extend: %v", err)
+	}
+
+	// Attempt to extend lock B.
+	found, err = manager.Extend("a", ticketB.Id(), 10*timeScale)
+	if err != nil {
+		t.Fatalf("Failed to extend lock: %v", err)
+	}
+	if found {
+		t.Fatalf("Lock was unexpectedly found when trying to extend: %v", err)
+	}
+
+	AssertPathLocked(t, manager, "a", ticketA.Id())
+
+	// Assert that after another second, the lock is still held by ticket A.
+	time.Sleep(5 * timeScale)
+
+	select {
+	case <-ticketB.Acquired():
+		t.Fatalf("Lock status was returned")
+	default:
+	}
+
+	AssertPathLocked(t, manager, "a", ticketA.Id())
+
+	// Assert that after another second, the lock is now held by ticket B.
+	time.Sleep(6 * timeScale)
+
+	select {
+	case status := <-ticketB.Acquired():
+		if !status {
+			t.Fatalf("Lock was expected to be acquired after waiting for timeout")
+		}
+	default:
+		t.Fatalf("Lock did not report acquisition state after timeout")
+	}
+
+	AssertPathLocked(t, manager, "a", ticketB.Id())
+
+	// Assert that after another second, the lock is released.
+	time.Sleep(11 * timeScale)
+
+	AssertPathLocked(t, manager, "a", 0)
+}
+
 func AssertPathLocked(t *testing.T, manager Manager, path string, expected uint64) {
 	locker, err := manager.IsLocked("a")
 	if err != nil {

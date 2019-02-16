@@ -18,12 +18,6 @@ type Manager interface {
 	// Stop maintenance.
 	Stop()
 
-	// Release a lock.
-	//
-	// If the ID is for a ticket that is still waiting to be locked, the ticket is informed of failed acquisition and
-	// removed from the queue. Returns whether the ticket was found.
-	Release(path string, id uint64) (found bool)
-
 	// Acquire a lock.
 	//
 	// Acquires a lock with a given timeout after which the attempt is aborted. The acquisition does not support
@@ -34,6 +28,17 @@ type Manager interface {
 	// if the ticket was actually acquired, signaling either the release of the lock or the intent to not carry on
 	// with the acquisition. In the latter case, the ticket is guaranteed to indicate that acquisition failed.
 	Acquire(path string, lockTimeout time.Duration, leaseTimeout time.Duration) (ticket Ticket, err error)
+
+	// Release a lock.
+	//
+	// If the ID is for a ticket that is still waiting to be locked, the ticket is informed of failed acquisition and
+	// removed from the queue. Returns whether the ticket was found.
+	Release(path string, id uint64) (found bool, err error)
+
+	// Extend a lease.
+	//
+	// Returns whether the lease was found and extended.
+	Extend(path string, id uint64, timeout time.Duration) (found bool, err error)
 
 	// Test if a path is locked.
 	//
@@ -76,7 +81,13 @@ func NewManager(config Config) Manager {
 	}
 }
 
-func (m *managerImpl) Release(path string, id uint64) bool {
+func (m *managerImpl) Release(path string, id uint64) (bool, error) {
+	// Clean and validate the path.
+	path, err := ValidateLockPath(path)
+	if err != nil {
+		return false, err
+	}
+
 	// Lock the manager.
 	m.sync.Lock()
 	defer m.sync.Unlock()
@@ -84,7 +95,7 @@ func (m *managerImpl) Release(path string, id uint64) bool {
 	// Find the lock.
 	curLock, ok := m.locks[path]
 	if !ok || len(curLock.tickets) == 0 {
-		return false
+		return false, nil
 	}
 
 	// Update the lock state.
@@ -114,7 +125,41 @@ func (m *managerImpl) Release(path string, id uint64) bool {
 		delete(m.locks, path)
 	}
 
-	return found
+	return found, nil
+}
+
+func (m *managerImpl) Extend(path string, id uint64, timeout time.Duration) (bool, error) {
+	// Clean and validate the path.
+	path, err := ValidateLockPath(path)
+	if err != nil {
+		return false, err
+	}
+
+	// Lock the manager.
+	m.sync.Lock()
+	defer m.sync.Unlock()
+
+	// Find the lock.
+	curLock, ok := m.locks[path]
+	if !ok || len(curLock.tickets) == 0 {
+		return false, nil
+	}
+
+	// Update the lock state.
+	headTicket := curLock.tickets[0]
+
+	if headTicket.id == id {
+		headTicket.leaseTimeoutAt = monotime.Monotonic() + timeout
+
+		go func() {
+			<-time.After(timeout)
+			m.maintainChan <- path
+		}()
+
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // Maintain a path.
