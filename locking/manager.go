@@ -63,10 +63,11 @@ type Manager interface {
 // path.
 type managerImpl struct {
 	sync                sync.Mutex
-	maintainChan        chan string
 	locks               map[string]*lockImpl
 	nextTicketId        int64
 	maintenanceInterval time.Duration
+	locksNeedingMaintenance []string
+	stopChan            chan struct{}
 }
 
 // New lock manager.
@@ -84,7 +85,6 @@ func NewManager(config Config) Manager {
 	return &managerImpl{
 		locks:               make(map[string]*lockImpl),
 		nextTicketId:        nextTicketId,
-		maintainChan:        make(chan string, 1024),
 		maintenanceInterval: maintenanceInterval,
 	}
 }
@@ -160,8 +160,11 @@ func (m *managerImpl) Extend(path string, id int64, timeout time.Duration) (bool
 		headTicket.leaseTimeoutAt = monotime.Monotonic() + timeout
 
 		go func() {
-			<-time.After(timeout)
-			m.maintainChan <- path
+			time.Sleep(timeout)
+
+			m.sync.Lock()
+			defer m.sync.Unlock()
+			m.locksNeedingMaintenance = append(m.locksNeedingMaintenance, path)
 		}()
 
 		return true, nil
@@ -207,8 +210,11 @@ func (m *managerImpl) maintainPath(path string) {
 		ticket.acquiredChan <- true
 
 		go func() {
-			<-time.After(ticket.firstLeaseTimeout)
-			m.maintainChan <- path
+			time.Sleep(ticket.firstLeaseTimeout)
+
+			m.sync.Lock()
+			defer m.sync.Unlock()
+			m.locksNeedingMaintenance = append(m.locksNeedingMaintenance, path)
 		}()
 	}
 
@@ -223,19 +229,45 @@ func (m *managerImpl) maintainPath(path string) {
 }
 
 func (m *managerImpl) Start() {
+	stopChan := make(chan struct{})
+
+	m.sync.Lock()
+
+	if m.stopChan != nil {
+		close(m.stopChan)
+	}
+
+	m.stopChan = stopChan
+	m.sync.Unlock()
+
 	go func() {
 		for {
-			path := <-m.maintainChan
+			time.Sleep(m.maintenanceInterval)
 
 			m.sync.Lock()
-			m.maintainPath(path)
+			for _, path := range m.locksNeedingMaintenance {
+				m.maintainPath(path)
+			}
+			m.locksNeedingMaintenance = nil
 			m.sync.Unlock()
+
+			select {
+			case <-m.stopChan:
+				return
+			default:
+			}
 		}
 	}()
 }
 
 func (m *managerImpl) Stop() {
+	m.sync.Lock()
+	defer m.sync.Unlock()
 
+	if m.stopChan != nil {
+		close(m.stopChan)
+		m.stopChan = nil
+	}
 }
 
 func (m *managerImpl) Acquire(path string, lockTimeout time.Duration, leaseTimeout time.Duration) (Ticket, error) {
@@ -276,8 +308,11 @@ func (m *managerImpl) Acquire(path string, lockTimeout time.Duration, leaseTimeo
 		ticket.acquiredChan <- true
 
 		go func() {
-			<-time.After(leaseTimeout)
-			m.maintainChan <- path
+			time.Sleep(leaseTimeout)
+
+			m.sync.Lock()
+			defer m.sync.Unlock()
+			m.locksNeedingMaintenance = append(m.locksNeedingMaintenance, path)
 		}()
 	} else if lockTimeout <= 0 {
 		// If the lock timeout is immediate, we simply indicate that the lock could not be acquired.
@@ -292,8 +327,11 @@ func (m *managerImpl) Acquire(path string, lockTimeout time.Duration, leaseTimeo
 		ticket.acquireTimeoutAt = monotime.Monotonic() + lockTimeout
 
 		go func() {
-			<-time.After(lockTimeout)
-			m.maintainChan <- path
+			time.Sleep(lockTimeout)
+
+			m.sync.Lock()
+			defer m.sync.Unlock()
+			m.locksNeedingMaintenance = append(m.locksNeedingMaintenance, path)
 		}()
 	}
 

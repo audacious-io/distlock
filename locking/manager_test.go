@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const timeScale = 10 * time.Millisecond
+const timeScale = 100 * time.Millisecond
 
 func TestManagerAcquireInvalidPath(t *testing.T) {
 	manager := NewManager(Config{MaintenanceInterval: timeScale})
