@@ -1,17 +1,17 @@
 # lockerd
 
-lockerd, not-so-cheekily named in honor of the rather great [linkerd](https://linkerd.io), is a distributed locking service designed to expose a simple inrterface easily consumed in a language agnostic manner.
+lockerd, not-so-cheekily named in honor of the rather great [linkerd](https://linkerd.io), is a distributed locking service designed to expose a simple interface easily consumed in a language-agnostic manner.
 
 
 ## Rationale
 
-In any sufficiently complex system, locking to protect resource access is a common solution to a number of problems. However, current available solutions suffer from a number of issues, that make development using this construct difficult.
+In any sufficiently complex system, locking to protect resource access is a common solution to a number of problems. However, currently available solutions suffer from a number of issues, that make development using this construct difficult.
 
 Firstly, most available solutions require a specialized pattern of use of some more generalized primitives to provide save locking, such as is the case with Redis, ZooKeeper, and, to some extent, etcd – and the same holds true if using even more general solutions like a relational database to solve the issue. These patterns must be correctly implemented across all participating clients, which complicates implementation.
 
-Secondarily, a number of these solutions require the use of specialized protocols and often clients that are difficult to easily implement in a number of languages, ZooKeeper being the main offender in this area, while others de facto require reliance on clients for which the behiavor is fairly opaque in failure scenarios. In extension hereof, many of these protocols require persistent connections or sessions to be maintained, which attentuates the aforementioned problem.
+Secondarily, a number of these solutions require the use of specialized protocols and often clients that are difficult to easily implement in a number of languages, ZooKeeper being the main offender in this area, while others de facto require reliance on clients for which the behavior is fairly opaque in failure scenarios. In extension hereof, many of these protocols require persistent connections or sessions to be maintained, which attenuates the aforementioned problem.
 
-Lastly, a number of these solutions by default share resources with a set of other primitives, causing either a much greater degree of production complexity in both observing and separating these concerns. To be fair, this is inately true of any system of growing complexity no matter the level of separation, so this argument is not as strong as the overall arguments in favor of development simplicity outlined above.
+Lastly, a number of these solutions by default share resources with a set of other primitives, causing either a much greater degree of production complexity in both observing and separating these concerns. To be fair, this is innately true of any system of growing complexity no matter the level of separation, so this argument is not as strong as the overall arguments in favor of development simplicity outlined above.
 
 In summary, in an effort to build a service architecture in which fairly common building blocks are readily available in an easily accessible manner no matter the language and environment, lockerd is built from the perspective of desiring a much simpler interface and set of constructs upon which to reliably build distributed applications.
 
