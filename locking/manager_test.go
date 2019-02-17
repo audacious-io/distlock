@@ -621,3 +621,69 @@ func AssertPathLocked(t *testing.T, manager Manager, path string, expected int64
 		}
 	}
 }
+
+func TestManagerInspectAll(t *testing.T) {
+	manager := NewManager(Config{MaintenanceInterval: timeScale})
+	go manager.Start()
+	defer manager.Stop()
+
+	// Test inspecting with no locks held.
+	states, err := manager.InspectAll()
+	if err != nil {
+		t.Fatalf("Failed to inspect manager: %v", err)
+	}
+
+	if len(states) != 0 {
+		t.Fatalf("Expected no states to be returned")
+	}
+
+	// Test inspecting with multiple locks.
+	ticketA, _ := manager.Acquire("a", 10*timeScale, 10*timeScale)
+	ticketB, _ := manager.Acquire("a", 10*timeScale, 10*timeScale)
+	ticketC, _ := manager.Acquire("a", 10*timeScale, 10*timeScale)
+	ticketD, _ := manager.Acquire("b", 10*timeScale, 10*timeScale)
+
+	states, err = manager.InspectAll()
+	if err != nil {
+		t.Fatalf("Failed to inspect lock: %v", err)
+	}
+
+	if len(states) != 2 {
+		t.Fatalf("Expected 2 states to be returned")
+	}
+
+	state := states["a"]
+	if state.LockingId != ticketA.Id() {
+		t.Errorf("Expected lock to be held by %d", ticketA.Id())
+	}
+	if state.LockTimeout <= 0 {
+		t.Errorf("Expected lock timeout")
+	}
+	if len(state.Acquirers) != 2 {
+		t.Errorf("Expected 2 acquirers")
+	}
+
+	if state.Acquirers[0].Id != ticketB.Id() {
+		t.Errorf("Expected acquirer #1 to be %d", ticketB.Id())
+	}
+	if state.Acquirers[0].Timeout <= 0 {
+		t.Errorf("Expected acquirer #1 to have timeout")
+	}
+	if state.Acquirers[1].Id != ticketC.Id() {
+		t.Errorf("Expected acquirer #2 to be %d", ticketC.Id())
+	}
+	if state.Acquirers[1].Timeout <= 0 {
+		t.Errorf("Expected acquirer #2 to have timeout")
+	}
+
+	state = states["b"]
+	if state.LockingId != ticketD.Id() {
+		t.Errorf("Expected lock to be held by %d", ticketA.Id())
+	}
+	if state.LockTimeout <= 0 {
+		t.Errorf("Expected lock timeout")
+	}
+	if len(state.Acquirers) != 0 {
+		t.Errorf("Expected no acquirers")
+	}
+}

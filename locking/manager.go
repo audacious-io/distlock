@@ -48,6 +48,11 @@ type Manager interface {
 
 	// Inpect lock state.
 	Inspect(path string) (state LockState, err error)
+
+	// Inspect all locks.
+	//
+	// Returns a complete snapshot of all held locks.
+	InspectAll() (states map[string]LockState, err error)
 }
 
 // Lock manager implementation.
@@ -370,20 +375,26 @@ func (m *managerImpl) Inspect(path string) (state LockState, err error) {
 	m.sync.Lock()
 	defer m.sync.Unlock()
 
-	// Fetch the lock state.
+	// Fetch the lock.
 	lock, ok := m.locks[path]
 	if !ok || len(lock.tickets) == 0 {
 		return
 	}
 
-	// Build the lock state.
-	state.LockingId = lock.tickets[0].id
-	state.LockTimeout = lock.tickets[0].leaseTimeoutAt - monotime.Monotonic()
-	state.Acquirers = make([]LockAcquirerState, len(lock.tickets)-1)
+	return lockStateFromLock(lock, monotime.Monotonic()), nil
+}
 
-	for idx, ticket := range lock.tickets[1:] {
-		state.Acquirers[idx].Id = ticket.id
-		state.Acquirers[idx].Timeout = ticket.acquireTimeoutAt - monotime.Monotonic()
+func (m *managerImpl) InspectAll() (states map[string]LockState, err error) {
+	// Lock the manager.
+	m.sync.Lock()
+	defer m.sync.Unlock()
+
+	// Build the state map.
+	now := monotime.Monotonic()
+	states = make(map[string]LockState, len(m.locks))
+
+	for path, lock := range m.locks {
+		states[path] = lockStateFromLock(lock, now)
 	}
 
 	return
