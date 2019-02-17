@@ -31,7 +31,11 @@ func (h *handler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	case "PATCH":
 		err = h.serveExtend(resp, req)
 	case "GET":
-		err = h.serveInspect(resp, req)
+		if req.URL.Path == "/" {
+			err = h.serveInspectAll(resp, req)
+		} else {
+			err = h.serveInspect(resp, req)
+		}
 	}
 
 	if err != nil {
@@ -192,4 +196,32 @@ func (h *handler) serveInspect(resp http.ResponseWriter, req *http.Request) erro
 		"lock_timeout": FormatDuration(state.LockTimeout),
 		"acquirers":    acquirers,
 	}, 200)
+}
+
+func (h *handler) serveInspectAll(resp http.ResponseWriter, req *http.Request) error {
+	// Inspect the manager.
+	states, err := h.manager.InspectAll()
+	if err != nil {
+		return err
+	}
+
+	locks := make(map[string]interface{}, len(states))
+
+	for path, state := range states {
+		acquirers := make([]interface{}, len(state.Acquirers))
+		for idx, acquirer := range state.Acquirers {
+			acquirers[idx] = map[string]interface{}{
+				"id":      fmt.Sprintf("%d", acquirer.Id),
+				"timeout": FormatDuration(acquirer.Timeout),
+			}
+		}
+
+		locks[path] = map[string]interface{}{
+			"locking_id":   fmt.Sprintf("%d", state.LockingId),
+			"lock_timeout": FormatDuration(state.LockTimeout),
+			"acquirers":    acquirers,
+		}
+	}
+
+	return respondJson(resp, locks, 200)
 }

@@ -22,6 +22,8 @@ type SuccessResponse struct {
 	Acquirers   []SuccessResponseAcquirer `json:"acquirers"`
 }
 
+type InspectAllResponse map[string]SuccessResponse
+
 type ErrorResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -359,6 +361,85 @@ func TestHandlerInspectLocked(t *testing.T) {
 	}
 	if body.Acquirers[1].Timeout == "" || body.Acquirers[1].Timeout == "0" {
 		t.Fatalf("Unxpected acquirer #2 timeout: %s", body.Acquirers[1].Timeout)
+	}
+}
+
+func TestHandlerInspectAll(t *testing.T) {
+	f := NewHandlerFixture(t)
+	defer f.Close()
+
+	// Test inspecting with no locks held.
+	resp := f.Request("GET", "/", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("Expected status code %d, got %d", 200, resp.StatusCode)
+	}
+
+	var body InspectAllResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("Error decoding response body: %v", err)
+	}
+
+	if len(body) != 0 {
+		t.Fatalf("Expected no locks to be returned")
+	}
+
+	// Test inspecting with locks held.
+	ticketA, _ := f.Manager.Acquire("a", time.Minute, time.Minute)
+	ticketB, _ := f.Manager.Acquire("a", time.Minute, time.Minute)
+	ticketC, _ := f.Manager.Acquire("a", time.Minute, time.Minute)
+	ticketD, _ := f.Manager.Acquire("b", time.Minute, time.Minute)
+
+	resp = f.Request("GET", "/", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("Expected status code %d, got %d", 200, resp.StatusCode)
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("Error decoding response body: %v", err)
+	}
+
+	if len(body) != 2 {
+		t.Fatalf("Expected 2 locks to be returned")
+	}
+
+	lock := body["a"]
+
+	if lock.LockingId != fmt.Sprintf("%d", ticketA.Id()) {
+		t.Fatalf("Expected locking ID to be %d, but it is %s", ticketA.Id(), lock.LockingId)
+	}
+	if lock.LockTimeout == "" || lock.LockTimeout == "0" {
+		t.Fatalf("Unxpected lock timeout: %s", lock.LockTimeout)
+	}
+
+	if len(lock.Acquirers) != 2 {
+		t.Fatalf("Expected 2 acquirers in response")
+	}
+
+	if lock.Acquirers[0].Id != fmt.Sprintf("%d", ticketB.Id()) {
+		t.Fatalf("Expected acquirer #1 ID to be %d, but it is %s", ticketB.Id(), lock.Acquirers[0].Id)
+	}
+	if lock.Acquirers[0].Timeout == "" || lock.Acquirers[0].Timeout == "0" {
+		t.Fatalf("Unxpected acquirer #1 timeout: %s", lock.Acquirers[0].Timeout)
+	}
+
+	if lock.Acquirers[1].Id != fmt.Sprintf("%d", ticketC.Id()) {
+		t.Fatalf("Expected acquirer #2 ID to be %d, but it is %s", ticketB.Id(), lock.Acquirers[1].Id)
+	}
+	if lock.Acquirers[1].Timeout == "" || lock.Acquirers[1].Timeout == "0" {
+		t.Fatalf("Unxpected acquirer #2 timeout: %s", lock.Acquirers[1].Timeout)
+	}
+
+	lock = body["b"]
+
+	if lock.LockingId != fmt.Sprintf("%d", ticketD.Id()) {
+		t.Fatalf("Expected locking ID to be %d, but it is %s", ticketD.Id(), lock.LockingId)
+	}
+	if lock.LockTimeout == "" || lock.LockTimeout == "0" {
+		t.Fatalf("Unxpected lock timeout: %s", lock.LockTimeout)
+	}
+
+	if len(lock.Acquirers) != 0 {
+		t.Fatalf("Expected 0 acquirers in response")
 	}
 }
 
