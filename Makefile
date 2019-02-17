@@ -17,6 +17,9 @@ cover:
 dist:
 	GOARCH=amd64 GOOS=linux go build -v -o bin/lockerd-linux-amd64 -ldflags "$(GO_LDFLAGS)" .
 
+docker: dist
+	docker build .
+
 fmt:
 	go fmt $(PACKAGE_DIRECTORIES)
 
@@ -26,4 +29,4 @@ test:
 vet:
 	go vet ./...
 
-.PHONY: all cover dist fmt test vet
+.PHONY: all cover dist docker fmt test vet
