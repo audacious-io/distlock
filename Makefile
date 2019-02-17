@@ -8,11 +8,14 @@ GO_LDFLAGS=-X $(VERSION_PACKAGE).GitCommit=$(GIT_COMMIT)$(GIT_DIRTY)
 
 all:
 	mkdir -p bin
-	go build -o bin/lockerd -ldflags "$(GO_LDFLAGS)" .
+	go build -v -o bin/lockerd -ldflags "$(GO_LDFLAGS)" .
 
 cover:
 	go test -coverprofile cover.out ./...
 	go tool cover -html=cover.out -o cover.html
+
+dist:
+	GOARCH=amd64 GOOS=linux go build -v -o bin/lockerd-linux-amd64 -ldflags "$(GO_LDFLAGS)" .
 
 fmt:
 	go fmt $(PACKAGE_DIRECTORIES)
@@ -23,4 +26,4 @@ test:
 vet:
 	go vet ./...
 
-.PHONY: all cover fmt test vet
+.PHONY: all cover dist fmt test vet
