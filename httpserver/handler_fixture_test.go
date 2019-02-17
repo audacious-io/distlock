@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"distlock/locking"
+	"lockerd/locking"
 )
 
 type HandlerFixture struct {

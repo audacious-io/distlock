@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"distlock/locking"
+	"lockerd/locking"
 )
 
 // HTTP handler for the locking API.
