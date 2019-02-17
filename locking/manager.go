@@ -285,8 +285,8 @@ func (m *managerImpl) Acquire(path string, lockTimeout time.Duration, leaseTimeo
 	prevLock, _ := m.locks[path]
 
 	// Create a ticket and evaluate locking.
-	if m.nextTicketId == 0 {
-		m.nextTicketId++
+	if m.nextTicketId < 1 {
+		m.nextTicketId = 1
 	}
 
 	ticketId := m.nextTicketId
